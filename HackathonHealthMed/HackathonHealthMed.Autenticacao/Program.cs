@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
+using Prometheus;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Encodings.Web;
 
@@ -89,6 +91,26 @@ builder.Services.AddControllers().AddJsonOptions(options =>
 
 var app = builder.Build();
 
+// Métricas - Prometheus
+
+var memoryUsageGauge = Metrics.CreateGauge("dotnet_memory_usage_bytes", "Uso da memória em bytes.");
+var cpuUsageGauge = Metrics.CreateGauge("dotnet_cpu_usage_percent", "Uso do CPU em porcentagem.");
+
+
+var timer = new System.Timers.Timer(5000);
+timer.Elapsed += (sender, e) =>
+{
+    var process = Process.GetCurrentProcess();
+    memoryUsageGauge.Set(process.WorkingSet64);
+    cpuUsageGauge.Set(GetCpuUsage(process));
+};
+timer.Start();
+
+static double GetCpuUsage(Process process)
+{
+    var cpuCounter = new PerformanceCounter("Process", "% Processor Time", process.ProcessName);
+    return cpuCounter.NextValue();
+}
 
 using (var scope = app.Services.CreateScope())
 {
@@ -111,6 +133,10 @@ app.UseHttpsRedirection();
 
 app.UseAuthentication();
 app.UseAuthorization();
+
+// Prometheus 
+app.UseMetricServer();
+app.UseHttpMetrics();
 
 app.MapControllers();
 
